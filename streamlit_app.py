@@ -9,6 +9,12 @@ from pathlib import Path
 
 # Optional heavy imports — try/except so app doesn't crash if missing
 try:
+    from streamlit_drawable_canvas import st_canvas
+    _CANVAS = True
+except Exception:
+    _CANVAS = False
+
+try:
     import numpy as np
     import plotly.graph_objects as go
     _PLOTLY = True
@@ -203,6 +209,26 @@ def send_aisensy(api_key, campaign, phone, uname, params, img_url=""):
     try: return r.json()
     except: return {"status":"sent"}
 
+def boxes_to_fabric(boxes, sx, sy):
+    """Convert box list to Fabric.js format for st_canvas initial_drawing (used on delete/reset)"""
+    colors = ["#E53935","#1565C0","#2E7D32","#F57F17","#6A1B9A"]
+    objs = []
+    for i, box in enumerate(boxes):
+        col = colors[i % len(colors)]
+        r, g, b = int(col[1:3],16), int(col[3:5],16), int(col[5:7],16)
+        objs.append({
+            "type": "rect", "version": "4.4.0",
+            "originX": "left", "originY": "top",
+            "left": round(float(box["x"]) / sx, 2),
+            "top":  round(float(box["y"]) / sy, 2),
+            "width":  round(float(box["w"]) / sx, 2),
+            "height": round(float(box["h"]) / sy, 2),
+            "fill": f"rgba({r},{g},{b},0.15)",
+            "stroke": col, "strokeWidth": 2,
+            "scaleX": 1, "scaleY": 1, "angle": 0,
+        })
+    return {"version": "4.4.0", "objects": objs}
+
 def make_plotly_fig(pil, boxes):
     iw, ih = pil.size
     buf = io.BytesIO()
@@ -289,8 +315,116 @@ with tab1:
     iw, ih = pil.size
     left_col, right_col = st.columns([3, 2])
 
-    if _PLOTLY:
-        # ── Plotly drag-to-select canvas ──────────────
+    # Common right-panel for box styling (used by canvas + plotly + slider modes)
+    def _render_right_panel(force_canvas_reset=False):
+        st.subheader("✏️ Text Boxes")
+        if not st.session_state.boxes:
+            st.info("👈 Image pe **drag** karo → box yahan dikhega")
+            return
+        ei = st.session_state.get("editing_idx", 0)
+        if ei >= len(st.session_state.boxes): ei = 0
+        opts = [f"Box {i+1}" for i in range(len(st.session_state.boxes))]
+        sel_r = st.radio("Box:", opts, index=ei, horizontal=True, key="box_r")
+        ei = int(sel_r.split()[1]) - 1
+        st.session_state.editing_idx = ei
+        box = st.session_state.boxes[ei]
+        st.divider()
+        st.session_state.boxes[ei]["label"] = st.text_input(
+            "Excel Column Name", value=box.get("label",""), key=f"lbl_{ei}")
+        c1, c2 = st.columns(2)
+        fn = box.get("font","Roboto Bold")
+        with c1:
+            st.session_state.boxes[ei]["font"] = st.selectbox("Font", FONT_LIST,
+                index=FONT_LIST.index(fn) if fn in FONT_LIST else 0, key=f"sfnt_{ei}")
+            st.session_state.boxes[ei]["size"] = st.number_input(
+                "Size", 8, 300, int(box.get("size",40)), key=f"ssz_{ei}")
+        with c2:
+            st.session_state.boxes[ei]["color"] = st.color_picker(
+                "Color", box.get("color","#000000"), key=f"scol_{ei}")
+            st.session_state.boxes[ei]["align"] = st.radio("Align",
+                ["left","center","right"],
+                index=["left","center","right"].index(box.get("align","center")),
+                horizontal=True, key=f"saln_{ei}")
+        st.divider()
+        st.caption(f"X={int(box.get('x',0))}  Y={int(box.get('y',0))}  "
+                   f"W={int(box.get('w',0))}  H={int(box.get('h',0))}px")
+        if st.button("🗑 Delete Box", use_container_width=True, key=f"del_{ei}"):
+            st.session_state.boxes.pop(ei)
+            st.session_state.editing_idx = max(0, ei-1)
+            st.session_state.canvas_key += 1
+            st.rerun()
+
+    if _CANVAS:
+        # ── Drawable canvas: draw + move + resize with mouse ──
+        MAX_W = 800
+        display_w = min(iw, MAX_W)
+        display_h = min(int(ih * display_w / iw), 700)
+        sx = iw / display_w
+        sy = ih / display_h
+
+        with left_col:
+            st.subheader("🖱️ Mouse se Box Banao")
+            cmode_sel = st.radio("",
+                ["✏️ Box Banao (Drag)", "↔️ Move / Resize"],
+                horizontal=True, key="cmode")
+            cmode = "rect" if "Banao" in cmode_sel else "transform"
+            if cmode == "rect":
+                st.caption("Image pe **drag karo** → naya box banega")
+            else:
+                st.caption("Box pe **click karo** to select → drag to move, **corner** se resize karo")
+
+            init_draw = boxes_to_fabric(st.session_state.boxes, sx, sy) \
+                        if st.session_state.boxes else None
+
+            canvas_result = st_canvas(
+                fill_color="rgba(229, 57, 53, 0.1)",
+                stroke_width=2,
+                stroke_color="#E53935",
+                background_image=pil.convert("RGB"),
+                update_streamlit=True,
+                height=display_h,
+                width=display_w,
+                drawing_mode=cmode,
+                key=f"canvas_{st.session_state.canvas_key}",
+                initial_drawing=init_draw,
+                display_toolbar=False,
+            )
+
+            if canvas_result.json_data is not None:
+                objs = [o for o in canvas_result.json_data.get("objects", [])
+                        if o.get("type") == "rect"]
+                n_c = len(objs)
+                n_b = len(st.session_state.boxes)
+
+                if n_c > n_b:
+                    # New box(es) drawn
+                    for i in range(n_b, n_c):
+                        obj = objs[i]
+                        x = float(obj["left"]) * sx
+                        y = float(obj["top"]) * sy
+                        w = float(obj["width"]) * float(obj.get("scaleX", 1)) * sx
+                        h = float(obj["height"]) * float(obj.get("scaleY", 1)) * sy
+                        if w > 5 and h > 5:
+                            st.session_state.boxes.append({
+                                "label": f"Field{len(st.session_state.boxes)+1}",
+                                "x": x, "y": y, "w": w, "h": h,
+                                "font": "Roboto Bold", "size": 40,
+                                "color": "#000000", "align": "center"
+                            })
+                            st.session_state.editing_idx = len(st.session_state.boxes) - 1
+
+                # Sync positions for all matching boxes (captures move/resize)
+                for i, obj in enumerate(objs[:len(st.session_state.boxes)]):
+                    st.session_state.boxes[i]["x"] = float(obj["left"]) * sx
+                    st.session_state.boxes[i]["y"] = float(obj["top"]) * sy
+                    st.session_state.boxes[i]["w"] = float(obj["width"]) * float(obj.get("scaleX",1)) * sx
+                    st.session_state.boxes[i]["h"] = float(obj["height"]) * float(obj.get("scaleY",1)) * sy
+
+        with right_col:
+            _render_right_panel()
+
+    elif _PLOTLY:
+        # ── Plotly drag-to-select canvas (fallback) ───────────
         with left_col:
             st.subheader("🖱️ Mouse se Box Banao")
             st.caption("Image pe **drag karo** (rectangle) → box ban jayega")
@@ -320,58 +454,12 @@ with tab1:
                             "font":"Roboto Bold","size":40,
                             "color":"#000000","align":"center"})
                         st.session_state.editing_idx = len(st.session_state.boxes)-1
-                        st.session_state.canvas_key += 1  # reset plotly selection
+                        st.session_state.canvas_key += 1
                         st.rerun()
 
         with right_col:
-            st.subheader("✏️ Text Boxes")
-            if not st.session_state.boxes:
-                st.info("👈 Image pe **drag** karo → box yahan dikhega")
-            else:
-                ei = st.session_state.get("editing_idx", 0)
-                if ei >= len(st.session_state.boxes): ei=0
-                opts = [f"Box {i+1}" for i in range(len(st.session_state.boxes))]
-                sel_r = st.radio("Box:", opts, index=ei, horizontal=True, key="box_r")
-                ei = int(sel_r.split()[1])-1
-                st.session_state.editing_idx = ei
-                box = st.session_state.boxes[ei]
-                st.divider()
-                st.session_state.boxes[ei]["label"] = st.text_input(
-                    "Excel Column Name", value=box.get("label",""), key=f"lbl_{ei}")
-                c1,c2 = st.columns(2)
-                fn = box.get("font","Roboto Bold")
-                with c1:
-                    st.session_state.boxes[ei]["font"] = st.selectbox("Font", FONT_LIST,
-                        index=FONT_LIST.index(fn) if fn in FONT_LIST else 0, key=f"sfnt_{ei}")
-                    st.session_state.boxes[ei]["size"] = st.number_input(
-                        "Size",8,300,int(box.get("size",40)),key=f"ssz_{ei}")
-                with c2:
-                    st.session_state.boxes[ei]["color"] = st.color_picker(
-                        "Color",box.get("color","#000000"),key=f"scol_{ei}")
-                    st.session_state.boxes[ei]["align"] = st.radio("Align",
-                        ["left","center","right"],
-                        index=["left","center","right"].index(box.get("align","center")),
-                        horizontal=True,key=f"saln_{ei}")
-                st.divider()
-                # ── Position & Size (resize) ──
-                st.caption("📐 Position & Size adjust karo:")
-                rc1, rc2 = st.columns(2)
-                with rc1:
-                    new_x = st.number_input("X (left)", 0, iw-1, int(box.get("x",0)), key=f"rx_{ei}")
-                    new_w = st.number_input("W (width)", 10, iw, int(box.get("w",100)), key=f"rw_{ei}")
-                with rc2:
-                    new_y = st.number_input("Y (top)", 0, ih-1, int(box.get("y",0)), key=f"ry_{ei}")
-                    new_h = st.number_input("H (height)", 10, ih, int(box.get("h",50)), key=f"rh_{ei}")
-                st.session_state.boxes[ei]["x"] = new_x
-                st.session_state.boxes[ei]["y"] = new_y
-                st.session_state.boxes[ei]["w"] = new_w
-                st.session_state.boxes[ei]["h"] = new_h
-                st.divider()
-                if st.button("🗑 Delete Box", use_container_width=True, key=f"del_{ei}"):
-                    st.session_state.boxes.pop(ei)
-                    st.session_state.editing_idx = max(0, ei-1)
-                    st.session_state.canvas_key += 1  # reset plotly selection
-                    st.rerun()
+            _render_right_panel()
+
     else:
         # ── Slider fallback ───────────────────────────
         with left_col:
@@ -380,17 +468,16 @@ with tab1:
             if not st.session_state.boxes: ei=None
             elif ei>=len(st.session_state.boxes): ei=0
             st.image(draw_preview(pil,st.session_state.boxes,ei),use_container_width=True)
-            st.warning("⚠️ plotly install nahi hai — requirements_web.txt mein `plotly>=5.0` add karo")
-
-        with right_col:
-            st.subheader("✏️ Text Boxes")
-            if st.button("➕ Naya Box Add Karo", type="primary", use_container_width=True):
+            if st.button("➕ Naya Box Add Karo", type="primary"):
                 st.session_state.boxes.append({
                     "label":f"Field{len(st.session_state.boxes)+1}",
                     "x":iw//4,"y":ih//4,"w":iw//2,"h":ih//8,
                     "font":"Roboto Bold","size":40,"color":"#000000","align":"center"})
                 st.session_state.editing_idx = len(st.session_state.boxes)-1
                 st.rerun()
+
+        with right_col:
+            st.subheader("✏️ Text Boxes")
             if not st.session_state.boxes:
                 st.info("Button dabao → box add hoga")
             else:
@@ -410,8 +497,9 @@ with tab1:
                 st.session_state.boxes[ei]["h"]=st.slider("↕ H",10,ih,int(box["h"]),key=f"sh_{ei}")
                 c1,c2=st.columns(2)
                 with c1:
+                    fn=box.get("font","Roboto Bold")
                     st.session_state.boxes[ei]["font"]=st.selectbox("Font",FONT_LIST,
-                        index=FONT_LIST.index(box["font"]) if box["font"] in FONT_LIST else 0,key=f"sfnt_{ei}")
+                        index=FONT_LIST.index(fn) if fn in FONT_LIST else 0,key=f"sfnt_{ei}")
                     st.session_state.boxes[ei]["size"]=st.number_input("Size",8,300,int(box["size"]),key=f"ssz_{ei}")
                 with c2:
                     st.session_state.boxes[ei]["color"]=st.color_picker("Color",box["color"],key=f"scol_{ei}")
