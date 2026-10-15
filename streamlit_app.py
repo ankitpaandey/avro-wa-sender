@@ -387,7 +387,6 @@ with tab1:
                 drawing_mode=cmode,
                 key=f"canvas_{st.session_state.canvas_key}",
                 initial_drawing=init_draw,
-                display_toolbar=False,
             )
 
             if canvas_result.json_data is not None:
