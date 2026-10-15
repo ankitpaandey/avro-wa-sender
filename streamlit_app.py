@@ -132,7 +132,7 @@ def get_pil_font(name, size):
 
 # ── Session state ──────────────────────────────
 for k, v in {"boxes":[], "template_pil":None, "df":None,
-              "img_hash":None, "editing_idx":0}.items():
+              "img_hash":None, "editing_idx":0, "canvas_key":0}.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -295,7 +295,8 @@ with tab1:
             st.subheader("🖱️ Mouse se Box Banao")
             st.caption("Image pe **drag karo** (rectangle) → box ban jayega")
             fig = make_plotly_fig(pil, st.session_state.boxes)
-            sel = st.plotly_chart(fig, key="canvas_plotly", on_select="rerun",
+            sel = st.plotly_chart(fig, key=f"canvas_plotly_{st.session_state.canvas_key}",
+                                  on_select="rerun",
                                   config={"displayModeBar": False},
                                   use_container_width=True)
             if sel and sel.selection:
@@ -319,6 +320,7 @@ with tab1:
                             "font":"Roboto Bold","size":40,
                             "color":"#000000","align":"center"})
                         st.session_state.editing_idx = len(st.session_state.boxes)-1
+                        st.session_state.canvas_key += 1  # reset plotly selection
                         st.rerun()
 
         with right_col:
@@ -351,12 +353,25 @@ with tab1:
                         index=["left","center","right"].index(box.get("align","center")),
                         horizontal=True,key=f"saln_{ei}")
                 st.divider()
-                if st.button("🗑 Delete Box", use_container_width=True):
+                # ── Position & Size (resize) ──
+                st.caption("📐 Position & Size adjust karo:")
+                rc1, rc2 = st.columns(2)
+                with rc1:
+                    new_x = st.number_input("X (left)", 0, iw-1, int(box.get("x",0)), key=f"rx_{ei}")
+                    new_w = st.number_input("W (width)", 10, iw, int(box.get("w",100)), key=f"rw_{ei}")
+                with rc2:
+                    new_y = st.number_input("Y (top)", 0, ih-1, int(box.get("y",0)), key=f"ry_{ei}")
+                    new_h = st.number_input("H (height)", 10, ih, int(box.get("h",50)), key=f"rh_{ei}")
+                st.session_state.boxes[ei]["x"] = new_x
+                st.session_state.boxes[ei]["y"] = new_y
+                st.session_state.boxes[ei]["w"] = new_w
+                st.session_state.boxes[ei]["h"] = new_h
+                st.divider()
+                if st.button("🗑 Delete Box", use_container_width=True, key=f"del_{ei}"):
                     st.session_state.boxes.pop(ei)
-                    st.session_state.editing_idx = max(0,ei-1)
+                    st.session_state.editing_idx = max(0, ei-1)
+                    st.session_state.canvas_key += 1  # reset plotly selection
                     st.rerun()
-                st.caption(f"X={int(box.get('x',0))} Y={int(box.get('y',0))} "
-                           f"W={int(box.get('w',0))} H={int(box.get('h',0))}px")
     else:
         # ── Slider fallback ───────────────────────────
         with left_col:
