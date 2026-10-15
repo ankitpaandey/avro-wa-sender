@@ -391,12 +391,12 @@ with tab1:
 
             if canvas_result.json_data is not None:
                 objs = [o for o in canvas_result.json_data.get("objects", [])
-                        if o.get("type") == "rect"]
+                        if str(o.get("type","")).lower() == "rect"]
                 n_c = len(objs)
                 n_b = len(st.session_state.boxes)
 
                 if n_c > n_b:
-                    # New box(es) drawn
+                    # New box(es) drawn — add with defaults then rerun so right panel updates
                     for i in range(n_b, n_c):
                         obj = objs[i]
                         x = float(obj["left"]) * sx
@@ -410,7 +410,8 @@ with tab1:
                                 "font": "Roboto Bold", "size": 40,
                                 "color": "#000000", "align": "center"
                             })
-                            st.session_state.editing_idx = len(st.session_state.boxes) - 1
+                    st.session_state.editing_idx = max(0, len(st.session_state.boxes) - 1)
+                    st.rerun()
 
                 # Sync positions for all matching boxes (captures move/resize)
                 for i, obj in enumerate(objs[:len(st.session_state.boxes)]):
