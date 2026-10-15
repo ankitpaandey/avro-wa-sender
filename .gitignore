@@ -1,0 +1,6 @@
+team_config.json
+__pycache__/
+*.pyc
+.env
+*.log
+.streamlit/secrets.toml

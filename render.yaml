@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: avro-wa-sender
+    runtime: python
+    buildCommand: pip install -r requirements_web.txt
+    startCommand: streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    envVars:
+      - key: app_password
+        value: avro@2024
+      - key: PYTHON_VERSION
+        value: 3.11.0
