@@ -542,6 +542,19 @@ with tab3:
     with c1: phone_col=st.selectbox("📞 Phone column",cols)
     with c2: param_str=st.text_input("Template Params (blank=none)",value="")
 
+    # Phone number preview — check karo ki correct number ja raha hai
+    with st.expander("🔍 Phone Numbers Preview (expand karke check karo)", expanded=True):
+        preview_rows = df.head(5)
+        phone_data = []
+        for _, r in preview_rows.iterrows():
+            raw = str(r.get(phone_col,""))
+            norm = normalize(raw, cc)
+            ok = len(norm) >= 10
+            phone_data.append({"Raw value": raw, "Normalized →": norm,
+                               "Status": "✅ OK" if ok else "❌ Bad"})
+        st.dataframe(phone_data, use_container_width=True, hide_index=True)
+        st.caption("Agar 'Raw value' mein galat column dikh raha hai → upar 'Phone column' change karo")
+
     message=st.text_area("💬 WhatsApp Message",
         value="Namaste {Naam} ji!\n\nAapka invitation attached hai.\n\nAvro India",height=80)
     st.caption("Tip: {ColumnName} likhna jahan value aani chahiye")
