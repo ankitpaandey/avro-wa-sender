@@ -623,11 +623,12 @@ with tab3:
     st.markdown(f"### {len(selected)} contacts selected")
 
     if selected:
+        st.info(f"📋 Campaign: **`{campaign}`** | Phone col: **`{phone_col}`** | CC: **`{cc}`**")
         if st.button(f"🚀 {len(selected)} contacts ko WhatsApp Bhejo!",type="primary",
                      use_container_width=True):
             errs=[]
             if not ai_key:    errs.append("AI Sensy API Key missing")
-            if send_img and not imgbb_key: errs.append("imgbb Key missing")
+            if send_img and not imgbb_key: errs.append("imgbb Key missing (sidebar mein daalo)")
             for e in errs: st.error(e)
             if errs: st.stop()
             params_cols=[c.strip() for c in param_str.split(",") if c.strip()]
@@ -636,7 +637,8 @@ with tab3:
             logs=[]; success=failed=0
             for i,idx in enumerate(selected):
                 row=df.iloc[idx].to_dict()
-                phone=normalize(str(row.get(phone_col,"")),cc)
+                raw_phone = str(row.get(phone_col,""))
+                phone=normalize(raw_phone, cc)
                 msg=message
                 for col in cols: msg=msg.replace("{"+str(col)+"}",str(row.get(col,"")))
                 t_params=[str(row.get(c,"")) for c in params_cols]
