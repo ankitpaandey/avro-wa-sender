@@ -555,6 +555,40 @@ with tab3:
         st.dataframe(phone_data, use_container_width=True, hide_index=True)
         st.caption("Agar 'Raw value' mein galat column dikh raha hai → upar 'Phone column' change karo")
 
+    # Single API test
+    with st.expander("🧪 Single Number Test (pehle yahan test karo)", expanded=True):
+        t1, t2 = st.columns([2,1])
+        with t1:
+            test_phone = st.text_input("Test Phone Number (10 ya 12 digit)", placeholder="9876543210", key="test_ph")
+        with t2:
+            st.write("")
+            st.write("")
+            do_test = st.button("📤 Test Bhejo", key="test_btn")
+        if do_test:
+            if not ai_key:
+                st.error("API Key missing — sidebar mein daalo")
+            elif not test_phone.strip():
+                st.error("Phone number daalo")
+            else:
+                norm_test = normalize(test_phone.strip(), cc)
+                st.info(f"Normalized number: **{norm_test}**  |  Campaign: **{campaign}**")
+                payload = {
+                    "apiKey": ai_key, "campaignName": campaign,
+                    "destination": norm_test, "userName": username,
+                    "templateParams": [], "source": "new-landing-page form",
+                    "buttons": [], "carouselCards": [], "location": {},
+                    "attributes": {}, "paramsFallbackValue": {}
+                }
+                try:
+                    resp = requests.post(AISENSY_URL, json=payload, timeout=30)
+                    if resp.ok:
+                        st.success(f"✅ Sent! Response: {resp.text[:300]}")
+                    else:
+                        st.error(f"❌ {resp.status_code}: {resp.text[:500]}")
+                        st.code(f"Payload sent:\n{payload}", language="json")
+                except Exception as ex:
+                    st.error(f"Error: {ex}")
+
     message=st.text_area("💬 WhatsApp Message",
         value="Namaste {Naam} ji!\n\nAapka invitation attached hai.\n\nAvro India",height=80)
     st.caption("Tip: {ColumnName} likhna jahan value aani chahiye")
